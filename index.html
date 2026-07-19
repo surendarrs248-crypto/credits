@@ -598,6 +598,7 @@ body{background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans',sans-seri
         </div>
       </div>
       <button class="edit-student-btn" onclick="openStudentModal()">✎ Edit Profile</button>
+      <button class="edit-student-btn" style="margin-left:8px" onclick="openProfileModal()">👥 Profiles</button>
     </div>
   </div>
 
@@ -5898,6 +5899,8 @@ function renderAnnexureForm(){
   if(catPanel)catPanel.style.display=annexCatOpen?'flex':'none';
   renderAnnexSources();
   if(annexCatOpen)setTimeout(renderAnnexCatList,0);
+  // Attach drag/drop handlers to all annex table rows to enable flexible dropping
+  setTimeout(attachAnnexDragHandlers,40);
   if(tray){
     const unF=poolFilterChips(un);
     tray.innerHTML=`<span style="font-size:11px;color:var(--ink3);font-weight:600">🧲 Old-PRC courses (${unF.length}${unF.length!==un.length?' of '+un.length:''} unmapped)</span>
@@ -5950,6 +5953,44 @@ function editRemark(id){
   s.remark = v.trim();
   toast('Remark saved','success');
   renderAll();renderAnnexureForm();saveState();
+}
+
+// Add drag/drop handlers to annex tables rows so users can drop chips/subjects
+function attachAnnexDragHandlers(){
+  try{
+    const paper=document.getElementById('annexPaper');
+    if(!paper) return;
+    // target rows: any table row inside annexPaper
+    const rows=paper.querySelectorAll('table tbody tr');
+    rows.forEach(r=>{
+      // ignore rows that already have explicit handlers
+      if(r.getAttribute('data-dd-attached')) return;
+      r.addEventListener('dragover',ev=>{
+        if(dragChipId!==null||dragSubjectId!==null||catDragIdx!=null){ev.preventDefault();r.classList.add('rt-dragover');}
+      });
+      r.addEventListener('dragleave',()=>r.classList.remove('rt-dragover'));
+      r.addEventListener('drop',ev=>{
+        r.classList.remove('rt-dragover');
+        // prefer dropping old-PRC chips onto table rows
+        if(dragChipId!=null){
+          // add as additional (Table IV)
+          annexAdditionalDrop();
+          return;
+        }
+        if(dragSubjectId!=null){
+          // drop subject onto row to attempt annexDrop (mapping)
+          annexDrop(dragSubjectId);
+          return;
+        }
+        if(catDragIdx!=null){
+          // dropping from catalog onto annex row
+          annexDrop(catDragIdx);
+          return;
+        }
+      });
+      r.setAttribute('data-dd-attached','1');
+    });
+  }catch(e){console.error(e);} 
 }
 
 // Helper to remove subject by id (used in Annexure actions)
