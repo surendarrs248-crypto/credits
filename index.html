@@ -2178,7 +2178,7 @@ function formatPassingStatus(grade, term){
   return term?term:'—';
 }
 function getAnnexureTableIRows(){
-  const r=settings.readmitSem||0;
+  const r=(student&&student.readmitSem)!==undefined?student.readmitSem:(settings.readmitSem||0);
   const maxSem=r>1?r-1:8;
   return subjects.filter(s=>!s.additional&&s.sem>=1&&s.sem<=maxSem).sort((a,b)=>(a.sem-b.sem)||String(a.code).localeCompare(String(b.code)));
 }
@@ -3374,6 +3374,17 @@ function saveStudent(){
   renderStudentCard();
   renderDashboardBacklogBanner();
   renderAll();
+  // If user selected a current year / semester, store per-student readmit semester
+  try{
+    const semMatch=(student.year||'').match(/Sem\s*(\d+)/i);
+    if(semMatch && semMatch[1]){
+      student.readmitSem = parseInt(semMatch[1],10) || student.readmitSem || 0;
+      // persist and re-render Annexure if visible
+      saveState();
+      const axp=document.getElementById('page-annexure');
+      if(axp&&axp.classList.contains('active'))renderAnnexureForm();
+    }
+  }catch(e){}
   const ap=activeProfile();
   ap.name=(student.name||'Student')+(student.roll?(' · '+student.roll):'');
   profilesSave();updateProfileChip();
@@ -5435,7 +5446,7 @@ function marksSplitSummary(codes,grades){
 }
 function closeSplit(){const el=document.getElementById('splitOverlay');if(el)el.classList.remove('open');}
 function prcPendingModel(){
-  const r=settings.readmitSem||0,rMax=r||9;
+  const r=(student&&student.readmitSem)!==undefined?student.readmitSem:(settings.readmitSem||0),rMax=r||9;
   const listed=subjects.filter(s=>s.sem<Math.min(rMax,9)&&!s.additional&&!isClearable(s));  // Table I = passed rows only; F/NP counted under Table II
   const mapped=listed.filter(s=>eqForSubject(s)||s.grade||s.term);
   const chips=poolVisibleChips();
@@ -5781,7 +5792,11 @@ function renderAnnexureForm(){
         <td class="mono">${cell(left.L)||0}</td><td class="mono">${cell(left.T)||0}</td><td class="mono">${cell(left.P)||0}</td><td class="mono"><b>${left.C}</b></td><td><b>${left.bk||''}</b></td>
         <td class="mono">${(s.grade||'').toUpperCase()||'—'}</td><td>${isFail?`<b style="color:#8b1a1a">${(s.status==='failed'?'FAIL':s.status==='np'?'NP':s.status==='rc'?'RC':'I')}</b>`:left.term||'—'}</td>
         ${right?`<td class="mono">${right.code||'—'}</td><td>${right.name}${eq?` <button class="chip-x" title="Remove mapping" onclick="removeEquivalenceById(${eq.id})">✕</button>`:''}</td>
-          <td class="mono">${cell(right.L)||0}</td><td class="mono">${cell(right.T)||0}</td><td class="mono">${cell(right.P)||0}</td><td class="mono"><b>${right.C}</b></td><td><b>${right.bk||''}</b></td>`:`<td colspan="8" class="p-slot">— no equivalent old-PRC course —</td>`}
+          <td class="mono">${cell(right.L)||0}</td><td class="mono">${cell(right.T)||0}</td><td class="mono">${cell(right.P)||0}</td><td class="mono"><b>${right.C}</b></td><td><b>${right.bk||''}</b></td>`:`
+          <td class="mono">—</td>
+          <td>— <button class="chip-x" title="Remark / Edit" onclick="editRemark(${s.id})">✎ Remark</button> <button class="chip-x" title="Add to Table IV" onclick="toggleAdditional(${s.id})">＋Add to IV</button></td>
+          <td class="mono">${cell(left.L)||0}</td><td class="mono">${cell(left.T)||0}</td><td class="mono">${cell(left.P)||0}</td><td class="mono"><b>${cell(left.C)||'—'}</b></td><td><b>${left.bk||''}</b></td>
+          <td class="mono">—</td>`}
       </tr>`;
     });
   }
@@ -5843,7 +5858,7 @@ function renderAnnexureForm(){
   </tbody></table>
   <h3>IV. Additional Course(s) (if any) <span style="font-weight:400;font-size:11px">— unmapped New PRC courses and any manually flagged additional requests</span> <button class="chip-x" onclick="openAddAdditional()" title="Add additional course">＋</button></h3>
   <table style="max-width:860px"><thead><tr><th style="width:36px">S.No</th><th>Course Code</th><th>Course Name</th><th colspan="4" style="text-align:center">Credit Structure L T P C</th><th>Semester in which it is offered/Basket</th></tr></thead><tbody>
-    ${addl.map((s,i)=>`<tr class="dash-row-drag" draggable="true" ondragstart="dragSubjectId=${s.id}" title="Drag to 🗑 to remove from Table IV"><td>${i+1}</td><td class="mono">${s.code||'—'}</td><td>${s.name} <button class="chip-x" title="Edit" onclick="editSubject(${s.id})">✎</button> <button class="chip-x" title="Remove from Table IV" onclick="toggleAdditional(${s.id})">✕</button></td><td class="mono">${cell(s.L)||0}</td><td class="mono">${cell(s.T)||0}</td><td class="mono">${cell(s.P)||0}</td><td class="mono"><b>${s.credits}</b></td><td>S${s.sem} / ${s.basket||''}</td></tr>`).join('')||`<tr><td colspan="8" class="p-slot">none</td></tr>`}
+    ${addl.map((s,i)=>`<tr class="dash-row-drag" draggable="true" ondragstart="dragSubjectId=${s.id}" title="Drag to 🗑 to remove from Table IV"><td>${i+1}</td><td class="mono">${s.code||'—'}</td><td>${s.name} ${s.remark?`<div style="font-size:11px;color:var(--ink4);margin-top:4px">Remark: ${s.remark}</div>`:''} <button class="chip-x" title="Edit" onclick="editSubject(${s.id})">✎</button> <button class="chip-x" title="Remove from Table IV" onclick="toggleAdditional(${s.id})">✕</button></td><td class="mono">${cell(s.L)||0}</td><td class="mono">${cell(s.T)||0}</td><td class="mono">${cell(s.P)||0}</td><td class="mono"><b>${s.credits}</b></td><td>S${s.sem} / ${s.basket||''}</td></tr>`).join('')||`<tr><td colspan="8" class="p-slot">none</td></tr>`}
     <tr class="tot"><td colspan="6">Total Credits</td><td class="mono">${addlTotal}</td><td></td></tr>
   </tbody></table>
   <h3>V. Courses not successfully completed and not part of the mapping, for removal from the transcript: <button class="chip-x" title="Add an old course for removal" onclick="openChipModal()">＋</button></h3>
@@ -5899,9 +5914,52 @@ function renderAnnexureForm(){
   }
 }
 
+// Toggle a subject as additional (Table IV)
+function toggleAdditional(id){
+  const s=subjects.find(x=>x.id===id);
+  if(!s) return;
+  s.additional = !s.additional;
+  toast(`${s.name} ${s.additional? 'added to':'removed from'} Table IV`,'success');
+  renderAll();
+  renderAnnexureForm();
+  saveState();
+}
+
+// Annexure: drop handler for adding an old course to Table IV (additional)
+function annexAdditionalDrop(){
+  if(dragChipId!=null){
+    const chip=oldPrcPool.find(c=>c.id===dragChipId);
+    if(!chip) return;
+    // create a new subject in register as additional (Table IV)
+    const obj={id:nextId++,name:chip.name,code:chip.code||'',credits:Number(chip.C)||0,L:chip.L||0,T:chip.T||0,P:chip.P||0,sem:chip.sem||1,basket:chip.basket||'PC',status:chip.grade?gradeToStatus(chip.grade):'pending',grade:chip.grade||'',additional:true,src:chip.src||null};
+    subjects.push(obj);
+    // mark chip as mapped to keep tray clean
+    chip.mappedEq = null; // keep as unmapped but used
+    dragChipId=null;
+    toast('Added to Table IV','success');
+    renderAll();renderAnnexureForm();saveState();
+  }
+}
+
+function editRemark(id){
+  const s=subjects.find(x=>x.id===id);
+  if(!s) return;
+  const cur=s.remark||'';
+  const v=prompt('Enter remark / note for this course:',cur);
+  if(v===null) return;
+  s.remark = v.trim();
+  toast('Remark saved','success');
+  renderAll();renderAnnexureForm();saveState();
+}
+
+// Helper to remove subject by id (used in Annexure actions)
+function deleteSubjectById(id){
+  deleteSubject(id);
+}
+
 // ── v5.3: UNDERTAKING LETTER (per official format) ────────────────────────────
 function printUndertaking(){
-  const r=settings.readmitSem||0;
+  const r=(student&&student.readmitSem)!==undefined?student.readmitSem:(settings.readmitSem||0);
   const cls=annexureClassify();
   const regFnp=subjects.filter(s=>isClearable(s));
   const seen=new Set(regFnp.map(s=>s.code||('~'+s.name)));
