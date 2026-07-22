@@ -3826,6 +3826,26 @@ function switchEquivTab(tab,btn){
   if(tab==='records')renderEquivTable();
   if(tab==='report')renderEquivReport();
 }
+function openAnnexureRightEdit(subjectId){
+  const s=subjects.find(x=>x.id===subjectId);if(!s)return;
+  const eq=equivalences.find(e=>e.subjectId===s.id);
+  const chip=eq?oldPrcPool.find(c=>c.mappedEq===eq.id||((c.code||'').toUpperCase()===String(eq.oldCode||'').toUpperCase())||((c.name||'').toLowerCase()===String(eq.oldName||'').toLowerCase())):null;
+  if(chip){openChipModal(chip.id);return;}
+  document.getElementById('chip-edit-id').value='';
+  document.getElementById('chipModalTitle').textContent='Add Old-PRC Course';
+  document.getElementById('chipSaveBtn').textContent='Add to Pool';
+  document.getElementById('chip-name').value=eq?eq.oldName||s.name:'';
+  document.getElementById('chip-code').value=eq?eq.oldCode||s.code||'':'';
+  document.getElementById('chip-grade').value='';
+  document.getElementById('chip-L').value=eq?(eq.oldL===''?'':eq.oldL):'';
+  document.getElementById('chip-T').value=eq?(eq.oldT===''?'':eq.oldT):'';
+  document.getElementById('chip-P').value=eq?(eq.oldP===''?'':eq.oldP):'';
+  document.getElementById('chip-C').value=eq?(eq.oldCredits||s.credits||'3'):'3';
+  document.getElementById('chip-sem').value='';
+  document.getElementById('chip-term').value=eq?eq.term||'':'';
+  document.getElementById('chipOverlay').classList.add('open');
+  toast('Edit the old-PRC course details on the right side','info');
+}
 function openChipModal(id){
   const c=id?oldPrcPool.find(x=>x.id===id):null;
   document.getElementById('chip-edit-id').value=c?c.id:'';
@@ -5735,7 +5755,7 @@ function renderAnnexureForm(){
         <td class="mono">${left.code||'—'}</td><td>${left.name} <button class="chip-x" title="Edit" onclick="editSubject(${s.id})">✎</button></td>
         <td class="mono">${cell(left.L)||0}</td><td class="mono">${cell(left.T)||0}</td><td class="mono">${cell(left.P)||0}</td><td class="mono"><b>${left.C}</b></td><td><b>${left.bk||''}</b></td>
         <td class="mono">${(s.grade||'').toUpperCase()||'—'}</td><td>${isFail?`<b style="color:#8b1a1a">${(s.status==='failed'?'FAIL':s.status==='np'?'NP':s.status==='rc'?'RC':'I')}</b>`:left.term||'—'}</td>
-        ${right?`<td class="mono">${right.code||'—'}</td><td>${right.name}${eq?` <button class="chip-x" title="Remove mapping" onclick="removeEquivalenceById(${eq.id})">✕</button>`:''}</td>
+        ${right?`<td class="mono">${right.code||'—'}</td><td>${right.name}${eq?` <button class="chip-x" title="Edit old-PRC course" onclick="openAnnexureRightEdit(${s.id})">✎</button> <button class="chip-x" title="Remove mapping" onclick="removeEquivalenceById(${eq.id})">✕</button>`:''}</td>
           <td class="mono">${cell(right.L)||0}</td><td class="mono">${cell(right.T)||0}</td><td class="mono">${cell(right.P)||0}</td><td class="mono"><b>${right.C}</b></td><td><b>${right.bk||''}</b></td>`:`<td colspan="8" class="p-slot">— no equivalent old-PRC course —</td>`}
       </tr>`;
     });
