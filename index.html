@@ -5756,7 +5756,7 @@ function renderAnnexureForm(){
         <td class="mono">${cell(left.L)||0}</td><td class="mono">${cell(left.T)||0}</td><td class="mono">${cell(left.P)||0}</td><td class="mono"><b>${left.C}</b></td><td><b>${left.bk||''}</b></td>
         <td class="mono">${(s.grade||'').toUpperCase()||'—'}</td><td>${isFail?`<b style="color:#8b1a1a">${(s.status==='failed'?'FAIL':s.status==='np'?'NP':s.status==='rc'?'RC':'I')}</b>`:left.term||'—'}</td>
         ${right?`<td class="mono">${right.code||'—'}</td><td>${right.name}${eq?` <button class="chip-x" title="Edit old-PRC course" onclick="openAnnexureRightEdit(${s.id})">✎</button> <button class="chip-x" title="Remove mapping" onclick="removeEquivalenceById(${eq.id})">✕</button>`:''}</td>
-          <td class="mono">${cell(right.L)||0}</td><td class="mono">${cell(right.T)||0}</td><td class="mono">${cell(right.P)||0}</td><td class="mono"><b>${right.C}</b></td><td><b>${right.bk||''}</b></td>`:`<td colspan="8" class="p-slot">— no equivalent old-PRC course —</td>`}
+          <td class="mono">${cell(right.L)||0}</td><td class="mono">${cell(right.T)||0}</td><td class="mono">${cell(right.P)||0}</td><td class="mono"><b>${right.C}</b></td><td><b>${right.bk||''}</b></td>`:`<td colspan="8" class="p-slot">— no equivalent old-PRC course — <button class="chip-x" title="Add old-PRC course" onclick="openAnnexureRightEdit(${s.id})">✎</button></td>`}
       </tr>`;
     });
   }
