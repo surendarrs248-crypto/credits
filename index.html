@@ -2180,7 +2180,7 @@ function formatPassingStatus(grade, term){
 function getAnnexureTableIRows(){
   const r=settings.readmitSem||0;
   const maxSem=r>1?r-1:8;
-  return subjects.filter(s=>!s.additional&&s.sem>=1&&s.sem<=maxSem).sort((a,b)=>(a.sem-b.sem)||String(a.code).localeCompare(String(b.code)));
+  return subjects.filter(s=>!s.additional&&!isClearable(s)&&s.sem>=1&&s.sem<=maxSem).sort((a,b)=>(a.sem-b.sem)||String(a.code).localeCompare(String(b.code)));
 }
 function getAnnexureAdditionalSubjects(){
   const mappedIds=new Set(subjects.filter(s=>eqForSubject(s)).map(s=>s.id));
@@ -5351,19 +5351,11 @@ function marksAllCourses(){return marksData.flatMap(d=>d.courses);}
 function marksCommitAll(){
   const all=marksData.flatMap(d=>d.courses.map(c=>({...c,__src:d.label})));
   if(!all.length){toast('No parsed courses yet — drop grade cards into the slots first','error');return;}
-  window.__marksSrc={};all.forEach(c=>{if(c.code&&!window.__marksSrc[c.code])window.__marksSrc[c.code]=c.__src;});
-  const objs=all.map(c=>({Code:c.code,Name:c.name,Semester:c.sem||'',Credits:c.credits,Grade:c.grade,Term:c.term||''}));
-  importMode=marksTarget;
-  importRows=rowsFromObjects(objs);
-  if(marksTarget==='register'){
-    const up=document.querySelector('input[name="dupMode"][value="update"]');
-    if(up)up.checked=true;
-  }
   const __committedCodes=all.map(c=>(c.code||'').toUpperCase()).filter(Boolean);
   const __committedGrades={};all.forEach(c=>{if(c.code)__committedGrades[c.code.toUpperCase()]=String(c.grade||'').toUpperCase();});
-  commitImport();
+  marksAutoAbsorb();
   marksClearAll();
-  setTimeout(()=>{marksSplitSummary(__committedCodes,__committedGrades);},260);
+  setTimeout(()=>{marksSplitSummary(__committedCodes,__committedGrades);},80);
 }
 // v6.1: after upload, split each course into the right Annexure table BY GRADE
 function marksSplitSummary(codes,grades){
@@ -5638,64 +5630,38 @@ function applyStudentFromSheet(who){
   toast('👤 '+got.join(' · ')+' — captured from the grade card','success');
 }
 function marksAutoAbsorb(){
-  // Every uploaded sheet mirrors into Table I: new codes are added, and a re-attempt of an
-  // existing failed/NP course (ST/MU/ET retake sheet) UPDATES that row's grade/term in place —
-  // so the left column always equals exactly what the marksheets say.
+  // The PRC grid stays on the left-hand side of Annexure. Uploaded marksheets only feed the old-PRC
+  // tray and create mappings to the PRC subjects, while clearable grades fall into Table II.
   const all=marksData.flatMap(d=>(d.courses||[]).map(c=>({...c,__src:d.label||d.file||''})));
   if(!all.length)return;
-  // readmission must be AFTER the last semester on the sheets — auto-raise it from the uploads
   const maxSem=Math.max(0,...all.map(c=>Number(c.sem)||0));
   if(maxSem>0&&(settings.readmitSem||0)<maxSem+1){settings.readmitSem=Math.min(maxSem+1,9);logAction('🎯',`Readmission semester inferred from marksheets: Sem ${settings.readmitSem}`);}
   const r=settings.readmitSem||0;const cap=r>1?r-1:9;
-  const byCode={};subjects.forEach(s=>{const k=(s.code||'').toUpperCase();if(k)byCode[k]=s;});
-  let added=0,failed=0,cleared=0,t5n=0,synced=0;
+  const existingByCode=new Map();
+  subjects.forEach(s=>{const k=(s.code||'').toUpperCase();if(k)existingByCode.set(k,s);});
+  let fallbackRows=0;
+  const mappedBefore=oldPrcPool.filter(c=>c.mappedEq).length;
   all.forEach(c=>{
     const key=(c.code||'').toUpperCase();
     if(!key)return;
-    // U (Audited Satisfactorily): no degree credit, not part of the mapping → Table V (removal list)
-    if(String(c.grade||'').toUpperCase()==='U'){
-      if(!oldPrcPool.some(p=>(p.code||'').toUpperCase()===key)&&!byCode[key]){
-        oldPrcPool.push({id:nextChipId++,code:c.code,name:c.name||'Course',L:0,T:0,P:0,C:Number(c.credits)||0,sem:Number(c.sem)||null,grade:c.grade,term:c.term||'',src:c.__src,mappedEq:null});
-        t5n++;
-      }
-      return;
-    }
-    const ex=byCode[key];
-    if(ex){
-      // the live marksheet is the source of truth — refresh the existing row from the sheet
-      const before=JSON.stringify([ex.grade,ex.term,ex.status,ex.credits,ex.name]);
-      const wasClear=isClearable(ex);
-      if(c.grade){ex.grade=c.grade;ex.status=gradeToStatus(c.grade)||ex.status;}
-      if(c.term)ex.term=c.term;
-      if(Number(c.credits))ex.credits=Number(c.credits);
-      if(c.name)ex.name=c.name;
-      if(!ex.src&&c.__src)ex.src=c.__src;
-      const nowClear=isClearable(ex);
-      if(wasClear&&!nowClear){cleared++;identityMapSubject(ex);logAction('✅',`${ex.code} cleared → ${ex.grade} (${ex.term||'re-attempt'})`);}
-      else if(!wasClear&&nowClear){const eqx=equivalences.find(e=>e.subjectId===ex.id);if(eqx)removeEquivalenceById(eqx.id);synced++;}
-      else if(JSON.stringify([ex.grade,ex.term,ex.status,ex.credits,ex.name])!==before)synced++;
-      return;
-    }
+    const grade=String(c.grade||'').toUpperCase();
     let sm=Number(c.sem)||1;if(sm<1)sm=1;if(sm>cap)sm=cap;if(sm>8)sm=8;
-    const ns={id:nextId++,code:c.code,name:c.name||'Course',credits:Number(c.credits)||0,sem:sm,type:'core',
-      status:(gradeToStatus(c.grade)||'completed'),grade:c.grade||'',basket:'PC',L:0,T:0,P:0,term:c.term||'',additional:false,src:c.__src};
-    subjects.push(ns);byCode[key]=ns;
-    if(!isClearable(ns))identityMapSubject(ns);else failed++;
-    added++;
+    oldPrcPool.push({id:nextChipId++,code:c.code,name:c.name||'Course',L:0,T:0,P:0,C:Number(c.credits)||0,sem:sm,grade,term:c.term||'',src:c.__src,mappedEq:null});
+    const nm=(c.name||'').trim().toLowerCase();
+    const match=existingByCode.get(key)||subjects.find(s=>!s.additional&&((s.code||'').toUpperCase()===key||((s.name||'').trim().toLowerCase()===nm&&nm)));
+    if(!match && ['F','NP','RC','I','NE','NC'].includes(grade)){
+      const fallback={id:nextId++,code:c.code,name:c.name||'Course',credits:Number(c.credits)||0,sem:sm,type:'core',status:gradeToStatus(grade)||'failed',grade, basket:'PC',L:0,T:0,P:0,term:c.term||'',additional:false,src:c.__src};
+      subjects.push(fallback);existingByCode.set(key,fallback);fallbackRows++;
+    }
   });
-  const __any=added||cleared||synced||t5n;
-  if(__any){
-    autoMapByCode(null,true);
-    logAction('📥',`Marksheet → Annexure: +${added}${cleared?`, ${cleared} cleared`:''}${synced?`, ${synced} refreshed`:''}${t5n?`, ${t5n} → Table V`:''}`);
-    renderAll();saveState();
-  }
-  navTo('annexure');   // LIVE requirement: uploading a marksheet ALWAYS lands on the filled Annexure form
+  autoMapByCode(null,true);
+  const mappedNow=oldPrcPool.filter(c=>c.mappedEq).length-mappedBefore;
+  logAction('📥',`Marksheet → Annexure: ${mappedNow} mapped to PRC${fallbackRows?` · ${fallbackRows} clearable subject(s) → Table II`:''}`);
+  renderAll();saveState();
+  navTo('annexure');
   const bits=[];
-  if(added)bits.push(`${added} added to Table I`);
-  if(cleared)bits.push(`${cleared} backlog(s) cleared`);
-  if(synced)bits.push(`${synced} row(s) refreshed from the sheet`);
-  if(failed)bits.push(`${failed} failed/NP → Table II`);
-  if(t5n)bits.push(`${t5n} audited (U) → Table V`);
+  if(mappedNow)bits.push(`${mappedNow} marksheet course(s) mapped to the PRC grid`);
+  if(fallbackRows)bits.push(`${fallbackRows} failed/NP/RC/I course(s) added to Table II`);
   toast(bits.length?bits.join(' · ')+' — Annexure updated':'Marksheet already reflected — Annexure opened',bits.length?'success':'info');
 }
 function marksCommitToAnnexure(){
@@ -5710,27 +5676,16 @@ function marksCommitToAnnexure(){
   setTimeout(()=>{marksSplitSummary(codes,grades);},80);
 }
 function promoteMarksheetToTable1(){
-  const r=settings.readmitSem||0; const cap=r>1?r-1:9;
-  const have=new Set(subjects.map(s=>(s.code||'').toUpperCase()).filter(Boolean));
-  let added=0;
-  poolVisibleChips().slice().forEach(c=>{
-    const key=(c.code||'').toUpperCase();
-    if(key&&have.has(key))return;            // already a Table I row
-    have.add(key);
-    let sm=Number(c.sem)||1; if(sm<1)sm=1; if(sm>cap)sm=cap; if(sm>8)sm=8;
-    const __ns={id:nextId++,code:c.code||'',name:c.name||'Course',credits:Number(c.C)||0,
-      sem:sm,type:'core',status:(gradeToStatus(c.grade)||'completed'),grade:c.grade||'',
-      basket:c.basket||'PC',L:Number(c.L)||0,T:Number(c.T)||0,P:Number(c.P)||0,term:c.term||'',additional:false};
-    subjects.push(__ns);
-    if(!isClearable(__ns))identityMapSubject(__ns);
-    const idx=oldPrcPool.findIndex(x=>x.id===c.id); if(idx>=0)oldPrcPool.splice(idx,1);  // leave the tray
-    added++;
-  });
-  if(!added){toast('No new marksheet courses to add — they are already in the tables','info');return;}
-  logAction('📥',`Added ${added} marksheet course(s) to Table I`);
-  toast(`Added ${added} course(s) \u2014 same-subject mapped. Drag a \ud83d\uddc3 catalog course onto a row where the new PRC differs.`,'success');
+  const chips=poolVisibleChips().filter(c=>!c.mappedEq);
+  if(!chips.length){toast('No uploaded marksheet course(s) need mapping','info');return;}
+  const before=oldPrcPool.filter(c=>c.mappedEq).length;
+  autoMapByCode(chips.map(c=>c.id),true);
+  const mapped=oldPrcPool.filter(c=>c.mappedEq).length-before;
   renderAll();saveState();
+  logAction('📥',`Mapped ${mapped} marksheet course(s) to the PRC grid`);
+  toast(mapped?`Mapped ${mapped} uploaded marksheet course(s) to the PRC grid`:'No new mapping was created','success');
 }
+
 function editSignatory(i){settings.signatories=settings.signatories||['Head of the Department','Dean of the School','Dean - Academics'];const v=prompt('Signatory title:',settings.signatories[i]);if(v!==null){settings.signatories[i]=v.trim()||settings.signatories[i];saveState();renderAnnexureForm();}}
 function addSignatory(){settings.signatories=settings.signatories||['Head of the Department','Dean of the School','Dean - Academics'];const v=prompt('New signatory title:','Controller of Examinations');if(v!==null&&v.trim()){settings.signatories.push(v.trim());saveState();renderAnnexureForm();}}
 function removeSignatory(i){settings.signatories=settings.signatories||[];if(settings.signatories.length<=1)return;if(!confirm('Remove this signatory?'))return;settings.signatories.splice(i,1);saveState();renderAnnexureForm();}
